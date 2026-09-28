@@ -3,3 +3,4 @@ target/
 .idea/
 *.iml
 HANDOFF.md
+/upstream-testcontainers-java/
