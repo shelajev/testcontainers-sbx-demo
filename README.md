@@ -1,123 +1,112 @@
-# Testcontainers + Docker Sandboxes
+# Testcontainers on Docker Sandboxes
 
-Run ordinary Testcontainers tests from a Mac while their Docker daemon lives in one named Docker Sandbox. Maven, Gradle, and the test JVM stay on the host. The repository also shows how to run its small Maven test entirely inside SBX.
+An experimental Testcontainers Java provider that starts Docker inside a local `sbx` sandbox **when the test JVM first needs a Docker client**. Add the library as a test dependency; ordinary Testcontainers containers keep their existing API. No bridge scripts, manually created sandbox, Docker Desktop, or JUnit launcher extension are needed.
 
-The Java test starts `nginx:1.27-alpine`, waits for HTTP 200, reads its Testcontainers mapped port, and fetches the page. It uses the public Testcontainers API. The bridge and port watcher are client-side scripts; there is no Testcontainers fork or SBX-specific Java code.
+The Maven build at the repository root produces the strategy JAR. [`examples/maven`](examples/maven) is an independent, copyable project that downloads that JAR from **JitPack**, not from the root build or your local Maven install.
 
-## Requirements
+## Run the example
 
-- Docker Sandboxes `sbx`, signed in. These commands were exercised on macOS with `sbx v0.46.0-rc5` and Docker Engine 29.8.1 inside a `shell` sandbox.
-- On the host: Python 3, OpenSSH, Docker CLI, Java 21 or newer, and Maven. The optional upstream core run also needs JDK 17. A host Docker daemon is not needed.
-- The tested `shell` sandbox has Docker Engine and `socat`. No kit is used.
+Requirements:
 
-## Host JVM, sandbox Docker daemon
-
-Clone this repository and create one sandbox for it:
-
-```sh
-git clone https://github.com/shelajev/testcontainers-sbx-demo.git
-cd testcontainers-sbx-demo
-sbx create --name tc-sbx-demo shell .
-sbx setup ssh
-ssh tc-sbx-demo.sbx hostname
-```
-
-Use three terminals in this repository's root.
-
-### Terminal 1: Docker API socket
+- Java 17 or newer, macOS or Linux, and OpenSSH (`ssh`) on `PATH`.
+- A supported local [Docker Sandboxes installation](https://docs.docker.com/ai/sandboxes/install/), signed in with `sbx login`.
+- A sandbox template providing Docker and `socat`. The default is `docker.io/docker/sandbox-templates:shell-docker`.
+- Network access for Maven dependencies, the template, nginx, and Ryuk images. The provider does not change your network policy.
 
 ```sh
-python3 scripts/bridge-docker-socket.py tc-sbx-demo "$PWD/.sbx-docker.sock"
+cd examples/maven
+./mvnw -B -ntp test
 ```
 
-The script creates a user-only Unix socket on the host. Each Docker API connection runs `socat` through an SSH **session** into this sandbox's `/var/run/docker.sock`. It opens no Docker TCP listener, and it never connects to the host-side sandbox management daemon. Leave it running while tests execute.
+Copy the entire `examples/maven` directory, including its `.mvn` directory and Maven wrapper, into another repository to try it independently. The example pins a published commit and asserts that Testcontainers actually selected the sbx provider. It checks HTTP readiness, calls nginx from the host JVM using `getHost()` and `getMappedPort()`, and runs a command inside the container.
 
-### Terminal 2: mapped ports
+If several `sbx` installations exist, select the one matching the running daemon:
 
 ```sh
-export DOCKER_HOST="unix://$PWD/.sbx-docker.sock"
-docker info --format '{{.Name}} {{.ServerVersion}}'
-./scripts/publish-ports.sh tc-sbx-demo
+./mvnw -B -ntp -Dsbx.executable=/absolute/path/to/sbx test
 ```
 
-`docker info` should name `tc-sbx-demo`. Start the watcher before the test. It watches container start events, publishes each Docker-assigned host port with `sbx ports`, and reconnects if the Docker event stream drops. Publications belong only to this named sandbox and bind to host loopback. A host test JVM needs each mapped port it will contact, including Ryuk's; it does not need every container port in every sandbox.
+## Add the dependency
 
-### Terminal 3: Maven test
+Use the exact `sbx.version` from the [example POM](examples/maven/pom.xml). These are JitPack coordinates; the GitHub repository name is also the published artifact name.
+
+```xml
+<repositories>
+  <repository>
+    <id>jitpack</id>
+    <url>https://jitpack.io</url>
+  </repository>
+</repositories>
+
+<dependency>
+  <groupId>com.github.shelajev</groupId>
+  <artifactId>testcontainers-sbx-demo</artifactId>
+  <version>66df7453d352cd4a4e23cc8fa3edb41b296a515c</version>
+  <scope>test</scope>
+</dependency>
+```
+
+The provider uses `META-INF/services/org.testcontainers.dockerclient.DockerClientProviderStrategy`. Creating or discovering the provider does not launch a process. `getTransportConfig()` lazily creates one sandbox for the selected provider; Testcontainers' singleton client then shares it across tests in that JVM. It works independently of the test framework.
+
+### Selection and existing Docker configuration
+
+The provider follows Testcontainers' existing discovery rules. An explicit `tc.host` or `DOCKER_HOST` is considered before discovered strategies. A saved strategy in `~/.testcontainers.properties` can also be tried first. The provider never edits that file, disables Ryuk, or overrides those explicit host settings.
+
+To bypass a saved discovery choice for a particular test run, set:
 
 ```sh
-export DOCKER_HOST="unix://$PWD/.sbx-docker.sock"
-export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
-mvn --no-transfer-progress clean test
+TESTCONTAINERS_DOCKER_CLIENT_STRATEGY=dev.agentcontainers.sbx.SbxDockerClientProviderStrategy ./mvnw test
 ```
 
-Expected result: `Tests run: 1, Failures: 0, Errors: 0`. The socket override tells Ryuk where the Docker socket is **inside** SBX. The printed `http://localhost:PORT` URL is fetched by the host JVM through an `sbx ports` publication. To keep nginx alive for inspection, set `DEMO_PAUSE_SECONDS=60` on the Maven command, then run `sbx exec tc-sbx-demo docker ps` and `sbx ports tc-sbx-demo` in another terminal. Ryuk removes nginx after the JVM exits; the watcher leaves port publications in place.
+The example configures this environment variable in Surefire. With Testcontainers 2.0.5, the sbx provider is non-persistable, so it is selected through the normal service-provider list at priority 200 after the configured-strategy step is skipped. This avoids saving a project-specific dependency into global configuration.
 
-## Try upstream Testcontainers Java core
+This is **not strict sandbox-only enforcement**: explicit Docker host configuration still wins, and Testcontainers may try another runtime if sbx initialization fails. The example asserts the selected strategy before starting its application container so that fallback cannot produce a misleading passing demonstration. If your application requires strict selection, check `DockerClientFactory.instance().isUsing(SbxDockerClientProviderStrategy.class)` after initializing its client, as the example does.
 
-The same host bridge can run upstream's core tests. This is a larger probe than the single nginx demo. Keep the three host terminals above running, then in Terminal 3:
+## Runtime and cleanup
 
-```sh
-git clone --depth 1 https://github.com/testcontainers/testcontainers-java.git upstream-testcontainers-java
-cd upstream-testcontainers-java
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-./gradlew :testcontainers:test --init-script ../scripts/upstream-core.init.gradle --continue --no-daemon --max-workers=2 --console=plain --rerun-tasks
+```text
+host test JVM → private Unix socket → SSH exec/socat → sandbox Docker socket
+host test JVM → 127.0.0.1:PORT → sbx publication → Docker-assigned port → container
 ```
 
-The Gradle init script selects ordinary core tests. It excludes Compose, container reuse and exposed-host integration, Docker Model Runner, MCP Gateway, two fixtures that pin images incompatible with this arm64 sandbox, and one TLS wait test whose three-second package-install deadline was unreliable under the parallel suite. This is a **scoped core suite**, not the full upstream suite. The tests and Gradle run on the host; only Docker runs in SBX. Build output stays in the cloned upstream repository, which is ignored by this demo's local Git checkout.
+Each test JVM creates a uniquely named `tc-java-<uuid>` sandbox with no host workspace mounts and shared skills disabled. Defaults are 2 CPUs and 2 GiB of memory. Parallel JVMs own separate sandboxes. The provider uses its own temporary SSH configuration with sbx host-key verification; it does not run `sbx setup ssh` or edit your SSH configuration.
 
-On Apple Silicon, many upstream tests use amd64-only images. Before the Gradle command, while the sandbox is running, enable emulation for this sandbox instance:
+Docker start, restart, unpause, inspect, and list commands synchronously publish the required ports before returning. Guest Docker host ports are published on the **same numbered host IPv4 loopback ports**, including Ryuk's port. A collision fails the operation instead of returning an unreachable endpoint or selecting a different port behind Testcontainers' back. Containers sharing a Docker network communicate normally inside the sandbox.
 
-```sh
-sbx exec tc-sbx-demo sh -lc 'mountpoint -q /proc/sys/fs/binfmt_misc || sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc'
-docker run --privileged --rm tonistiigi/binfmt --install amd64
-```
+Ryuk stays enabled, mounting the guest `/var/run/docker.sock`. On normal JVM exit, the provider closes its bridge and removes only its own sandbox after checking its UUID; this also removes its port publications, images, containers, and volumes. Testcontainers container reuse is therefore not supported across JVMs. A forcibly killed JVM or failed cleanup can leave a sandbox behind. Inspect `sbx ls`, then explicitly remove the logged name with `sbx rm --force NAME`.
 
-The binfmt registration is runtime state and must be repeated if the sandbox stops. Some upstream Dockerfile fixtures install packages from Alpine's HTTP repository. If SBX policy blocks that exact endpoint, allow it only for this sandbox:
+Configuration is read from Java system properties only when the runtime is needed:
 
-```sh
-sbx policy log tc-sbx-demo --limit 20
-sbx policy allow network --sandbox tc-sbx-demo dl-cdn.alpinelinux.org:80
-```
-
-The upstream experiment on 2026-09-28 used commit `8e549514e3f01c57d70546fbb8599d138f3903e5`, host JDK 17, and one `tc-java-sbx-suite` sandbox. The published command completed with **410 tests: 407 passed, 3 skipped, 0 failed, 0 errors** (`BUILD SUCCESSFUL` in 3m 16s). A separate run of this repository's host Maven test completed with **1 passed, 0 failed**; nginx and Ryuk were gone afterward.
-
-The first exploratory core run had 8 failures among 413 tests. They exposed blocked Alpine HTTP package downloads, an amd64-only image without emulation, a short-lived container event that stopped the port watcher, Docker exec responses that stayed open through an SSH TCP forward, and an old RabbitMQ image that exited under emulation. The final scoped run used a narrow network rule, binfmt registration, the reconnecting watcher, the SSH session bridge, and the exclusions listed in the init script. These results do not claim that every upstream module or every core test works on this setup.
-
-## Optional: put Maven and the test JVM inside SBX
-
-The `shell` sandbox already has Java and Docker. Install Maven once in this named sandbox, then run the same test there:
-
-```sh
-sbx exec -u root tc-sbx-demo sh -lc 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq maven'
-sbx exec tc-sbx-demo mvn --no-transfer-progress clean test
-```
-
-This mode needs no host Docker bridge or port watcher because the test JVM contacts the sandbox's Docker socket and container ports locally. It was verified with the nginx demo; the upstream suite described above was run on the host.
-
-## What is isolated?
-
-| Resource | Host JVM mode | Inside SBX mode |
+| Property | Default | Purpose |
 | --- | --- | --- |
-| Java and Maven/Gradle | Host | Sandbox |
-| Docker daemon, images, containers, networks, volumes | Sandbox | Sandbox |
-| Docker API access | Host process that can open the bridge socket, plus sandbox processes | Sandbox processes |
-| Build dependency cache | Host | Sandbox |
-| Test JVM network policy | Host policy | SBX policy |
-| Container traffic and image pulls | SBX policy on the tested setup | SBX policy on the tested setup |
-| Container ports used by the JVM | Published individually to host loopback | Inside sandbox |
+| `sbx.executable` | `sbx` on `PATH` | CLI binary, preferably an absolute path when several versions are installed |
+| `sbx.template` | `docker.io/docker/sandbox-templates:shell-docker` | Template containing Docker and `socat` |
+| `sbx.cpus` | `2` | Positive CPU allocation |
+| `sbx.memory` | `2g` | Memory allocation in sbx format |
+| `sbx.startupTimeoutSeconds` | `120` | Command timeout and Docker readiness budget |
 
-The workspace is bind-mounted read/write. A container can bind-mount paths visible inside SBX, including the workspace. It cannot automatically mount arbitrary Mac paths that are absent from SBX. Removing this sandbox deletes its Docker runtime and installed packages, but leaves the host checkout and build outputs.
+For example, `./mvnw -Dsbx.memory=4g -Dsbx.cpus=4 test` configures the example's sandbox. The template uses sbx's `missing` pull policy; use an immutable template reference when reproducibility is required.
 
-## Limits and cleanup
+## Current boundaries
 
-The host bridge is demo glue, not a built-in SBX Docker context. On the tested SBX release, a normal SSH local port forward carried Docker API requests but held `docker exec` response streams open. A direct Unix socket SSH forward was rejected by the SBX SSH server. The session-based bridge above completed both streaming exec and longer container output in the host tests. It starts an SSH session per Docker API connection, so the upstream suite has extra connection cost.
+- This implementation targets local macOS/Linux sandboxes. Windows, cloud sandboxes, and a test JVM running inside another container are outside its supported scope.
+- Same-number publication can collide with host services or other sandboxes. TCP and UDP IPv4 bindings are supported by the publisher; IPv6-only and interface-specific Docker bindings are rejected. The live smoke test covers TCP.
+- Bind mounts resolve inside the mountless sandbox, so arbitrary host filesystem binds do not work. Use Testcontainers file-copy APIs or streamed image build contexts. Host Docker images are not automatically imported.
+- Containers launched through a guest Docker socket or external client are not automatically observed. An inspect/list through the wrapped client acts as a publication barrier. Compose, Kubernetes/Kind, reverse host-port exposure, and external-client orchestration need separate compatibility work.
+- Per-JVM isolation costs VM startup time and loses the guest Docker image cache at JVM exit. The SSH bridge starts a process per Docker API connection. These are deliberate initial implementation tradeoffs, not performance parity claims.
+- The host JVM remains on the host. Only Docker workloads run inside sbx. Existing sbx governance, authentication, image architecture, and guest-kernel constraints still apply.
 
-The watcher assumes Docker's assigned sandbox port can be bound to the same free host loopback port. It leaves publications after containers stop; `sbx ports tc-sbx-demo` shows them. If a mapping conflicts, use `sbx ports tc-sbx-demo --unpublish HOST_PORT:SANDBOX_PORT`, or remove the sandbox when done. The host socket grants control of this sandbox's Docker daemon to processes that can open it.
-
-Stop the watcher and bridge with Ctrl-C. Then remove this demo's sandbox:
+## Build and verify the library
 
 ```sh
-sbx rm tc-sbx-demo
+# Unit tests and packaging: no sbx login, VM, or Docker required.
+./mvnw -B -ntp verify
+
+# Opt-in live test: creates and removes a sandbox, exercises HTTP, logs,
+# exec, file copy, and restart with Ryuk enabled.
+./mvnw -B -ntp -Pintegration verify
 ```
 
-The `.sbx-docker.sock` file is removed when the bridge exits normally. If it remains after a forced exit, delete that socket file before restarting the bridge.
+JitPack runs the ordinary build with Java 17. The example is deliberately **not** a Maven reactor module, and JitPack never runs live integration tests. To validate publication, copy the example outside this checkout and use an empty Maven local repository; the pinned strategy must download from `https://jitpack.io`.
+
+The original script-based experiment and its scoped upstream-suite results remain available at [commit f26fa18](https://github.com/shelajev/testcontainers-sbx-demo/tree/f26fa18c4b14d9091dff095618c976346259e491). Those historical results are not a compatibility claim for this strategy.
