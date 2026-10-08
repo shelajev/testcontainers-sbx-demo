@@ -41,7 +41,7 @@ Use the exact `sbx.version` from the [example POM](examples/maven/pom.xml). Thes
 <dependency>
   <groupId>com.github.shelajev</groupId>
   <artifactId>testcontainers-sbx-demo</artifactId>
-  <version><!-- copy sbx.version from examples/maven/pom.xml --></version>
+  <version>66df7453d352cd4a4e23cc8fa3edb41b296a515c</version>
   <scope>test</scope>
 </dependency>
 ```

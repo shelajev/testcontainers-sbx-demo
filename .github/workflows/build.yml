@@ -17,3 +17,5 @@ jobs:
           cache: maven
       # Publishing and ordinary builds must never provision a sandbox.
       - run: ./mvnw -B -ntp verify
+      - name: Compile the standalone JitPack consumer
+        run: ./mvnw -B -ntp -f examples/maven/pom.xml -DskipTests test
