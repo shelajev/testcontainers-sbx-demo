@@ -31,7 +31,7 @@ final class DockerSocketBridge implements AutoCloseable {
             server.close();
             throw e;
         }
-        Commands.daemon("sbx-docker-accept", this::accept);
+        Commands.startWorker("sbx-docker-accept", this::accept);
     }
 
     private void accept() {
@@ -43,7 +43,7 @@ final class DockerSocketBridge implements AutoCloseable {
                     client.close();
                     clients.remove(client);
                 } else {
-                    Commands.daemon("sbx-docker-connection", () -> bridge(client));
+                    Commands.startWorker("sbx-docker-connection", () -> bridge(client));
                 }
             } catch (IOException e) {
                 if (!closed) LOG.warn("Docker socket bridge stopped accepting connections", e);
@@ -53,41 +53,43 @@ final class DockerSocketBridge implements AutoCloseable {
     }
 
     private void bridge(SocketChannel client) {
-        Process child = null;
-        try (client) {
-            child = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.INHERIT).start();
-            processes.add(child);
-            if (closed) return;
-            Process process = child;
-            Commands.daemon("sbx-docker-request", () -> {
-                try {
-                    ByteBuffer buffer = ByteBuffer.allocate(65536);
-                    int count;
-                    while ((count = client.read(buffer)) != -1) {
-                        process.getOutputStream().write(buffer.array(), 0, count);
-                        process.getOutputStream().flush();
-                        buffer.clear();
-                    }
-                    process.getOutputStream().close();
-                } catch (IOException e) {
-                    process.destroy();
+        try (client;
+             Process process = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.INHERIT).start()) {
+            processes.add(process);
+            try {
+                if (closed) return;
+                Commands.startWorker("sbx-docker-request", () -> forwardRequest(client, process));
+                byte[] buffer = new byte[65536];
+                int count;
+                while ((count = process.getInputStream().read(buffer)) != -1) {
+                    ByteBuffer bytes = ByteBuffer.wrap(buffer, 0, count);
+                    while (bytes.hasRemaining()) client.write(bytes);
                 }
-            });
-            byte[] buffer = new byte[65536];
-            int count;
-            while ((count = process.getInputStream().read(buffer)) != -1) {
-                ByteBuffer bytes = ByteBuffer.wrap(buffer, 0, count);
-                while (bytes.hasRemaining()) client.write(bytes);
+                client.shutdownOutput();
+            } finally {
+                // Process.close() waits for exit, so stop the relay before closing its streams.
+                process.destroyForcibly();
+                processes.remove(process);
             }
-            client.shutdownOutput();
         } catch (IOException e) {
             if (!closed) LOG.debug("Docker bridge connection closed", e);
         } finally {
-            if (child != null) {
-                child.destroyForcibly();
-                processes.remove(child);
-            }
             clients.remove(client);
+        }
+    }
+
+    private static void forwardRequest(SocketChannel client, Process process) {
+        try {
+            ByteBuffer buffer = ByteBuffer.allocate(65536);
+            int count;
+            while ((count = client.read(buffer)) != -1) {
+                process.getOutputStream().write(buffer.array(), 0, count);
+                process.getOutputStream().flush();
+                buffer.clear();
+            }
+            process.getOutputStream().close();
+        } catch (IOException e) {
+            process.destroy();
         }
     }
 

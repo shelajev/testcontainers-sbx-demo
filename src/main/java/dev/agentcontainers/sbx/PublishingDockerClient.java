@@ -51,10 +51,12 @@ final class PublishingDockerClient {
     }
 
     private static String containerId(Object command) {
-        if (command instanceof StartContainerCmd start) return start.getContainerId();
-        if (command instanceof RestartContainerCmd restart) return restart.getContainerId();
-        if (command instanceof UnpauseContainerCmd unpause) return unpause.getContainerId();
-        throw new IllegalArgumentException("Unsupported command: " + command.getClass());
+        return switch (command) {
+            case StartContainerCmd start -> start.getContainerId();
+            case RestartContainerCmd restart -> restart.getContainerId();
+            case UnpauseContainerCmd unpause -> unpause.getContainerId();
+            default -> throw new IllegalArgumentException("Unsupported command: " + command.getClass());
+        };
     }
 
     private static Object invoke(Method method, Object target, Object[] args) throws Throwable {

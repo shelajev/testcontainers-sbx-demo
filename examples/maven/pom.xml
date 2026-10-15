@@ -7,7 +7,7 @@
   <artifactId>testcontainers-sbx-example</artifactId>
   <version>1.0-SNAPSHOT</version>
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>27</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <sbx.version>66df7453d352cd4a4e23cc8fa3edb41b296a515c</sbx.version>
     <testcontainers.version>2.0.5</testcontainers.version>

@@ -2,7 +2,7 @@
 
 Copy this entire directory (including `.mvn`, `mvnw`, and `mvnw.cmd`) into any directory. It has no parent POM, source inclusion, or dependency on a local build of the strategy.
 
-Install Java 17+, OpenSSH, and [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/install/), then run `sbx login` once. Run:
+Install Java 27+, OpenSSH, and [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/install/), then run `sbx login` once. Run:
 
 ```sh
 ./mvnw -B -ntp test

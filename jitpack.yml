@@ -1,4 +1,4 @@
 jdk:
-  - openjdk17
+  - openjdk27
 install:
   - ./mvnw -B -ntp clean install

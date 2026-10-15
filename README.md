@@ -8,7 +8,7 @@ The Maven build at the repository root produces the strategy JAR. [`examples/mav
 
 Requirements:
 
-- Java 17 or newer, macOS or Linux, and OpenSSH (`ssh`) on `PATH`.
+- Java 27 or newer, macOS or Linux, and OpenSSH (`ssh`) on `PATH`.
 - A supported local [Docker Sandboxes installation](https://docs.docker.com/ai/sandboxes/install/), signed in with `sbx login`.
 - A sandbox template providing Docker and `socat`. The default is `docker.io/docker/sandbox-templates:shell-docker`.
 - Network access for Maven dependencies, the template, nginx, and Ryuk images. The provider does not change your network policy.
@@ -107,6 +107,6 @@ For example, `./mvnw -Dsbx.memory=4g -Dsbx.cpus=4 test` configures the example's
 ./mvnw -B -ntp -Pintegration verify
 ```
 
-JitPack runs the ordinary build with Java 17. The example is deliberately **not** a Maven reactor module, and JitPack never runs live integration tests. To validate publication, copy the example outside this checkout and use an empty Maven local repository; the pinned strategy must download from `https://jitpack.io`.
+JitPack runs the ordinary build with Java 27. The example is deliberately **not** a Maven reactor module, and JitPack never runs live integration tests. To validate publication, copy the example outside this checkout and use an empty Maven local repository; the pinned strategy must download from `https://jitpack.io`.
 
 The original script-based experiment and its scoped upstream-suite results remain available at [commit f26fa18](https://github.com/shelajev/testcontainers-sbx-demo/tree/f26fa18c4b14d9091dff095618c976346259e491). Those historical results are not a compatibility claim for this strategy.

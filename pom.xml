@@ -9,7 +9,7 @@
   <description>On-demand Docker Sandboxes runtime for Testcontainers Java</description>
   <url>https://github.com/shelajev/testcontainers-sbx-demo</url>
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>27</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <testcontainers.version>2.0.5</testcontainers.version>
     <junit.version>5.13.4</junit.version>

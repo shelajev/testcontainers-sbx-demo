@@ -14,6 +14,26 @@ import org.junit.jupiter.api.Test;
 
 class DockerSocketBridgeTest {
     @Test
+    void closesAnActiveConnection() throws Exception {
+        Path directory = Files.createTempDirectory(Path.of("/tmp"), "bridge-test-");
+        Path socket = directory.resolve("docker.sock");
+        try (DockerSocketBridge bridge = new DockerSocketBridge(socket, List.of("cat"));
+             SocketChannel client = SocketChannel.open(StandardProtocolFamily.UNIX)) {
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+                client.connect(UnixDomainSocketAddress.of(socket));
+                client.write(ByteBuffer.wrap(new byte[] {42}));
+                ByteBuffer response = ByteBuffer.allocate(1);
+                while (response.hasRemaining()) assertTrue(client.read(response) >= 0);
+                bridge.close();
+                assertEquals(-1, client.read(ByteBuffer.allocate(1)));
+            });
+        } finally {
+            Files.deleteIfExists(socket);
+            Files.delete(directory);
+        }
+    }
+
+    @Test
     void relaysBinaryStreamsAndFinishesTheResponseAfterRequestHalfClose() throws Exception {
         Path directory = Files.createTempDirectory(Path.of("/tmp"), "bridge-test-");
         Path socket = directory.resolve("docker.sock");
@@ -23,7 +43,7 @@ class DockerSocketBridgeTest {
             assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
                 try (SocketChannel client = SocketChannel.open(StandardProtocolFamily.UNIX)) {
                     client.connect(UnixDomainSocketAddress.of(socket));
-                    Thread writer = Commands.daemon("test-request", () -> {
+                    Thread writer = Commands.startWorker("test-request", () -> {
                         try {
                             ByteBuffer data = ByteBuffer.wrap(request);
                             while (data.hasRemaining()) client.write(data);
