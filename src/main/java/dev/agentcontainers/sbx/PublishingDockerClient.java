@@ -5,14 +5,15 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.RestartContainerCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.UnpauseContainerCmd;
+import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.ContainerPort;
-import java.util.ArrayList;
-import java.util.Locale;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -54,7 +55,7 @@ final class PublishingDockerClient {
                                     });
                                     container.ports = ports.toArray(ContainerPort[]::new);
                                 }
-                            } catch (com.github.dockerjava.api.exception.NotFoundException ignored) {
+                            } catch (NotFoundException ignored) {
                                 // It was removed after the list snapshot.
                             }
                         }

@@ -15,6 +15,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -133,8 +135,8 @@ class SbxRuntimeIT {
             assertNotEquals(occupied.getLocalPort(), nginx.getMappedPort(HTTP_PORT));
             assertTrue(fetch(endpoint(nginx)).contains("Welcome to nginx!"));
             var listed = DockerClientFactory.instance().client().listContainersCmd()
-                .withIdFilter(java.util.List.of(nginx.getContainerId())).exec().getFirst();
-            assertTrue(java.util.Arrays.stream(listed.getPorts()).anyMatch(port ->
+                .withIdFilter(List.of(nginx.getContainerId())).exec().getFirst();
+            assertTrue(Arrays.stream(listed.getPorts()).anyMatch(port ->
                 Integer.valueOf(nginx.getMappedPort(HTTP_PORT)).equals(port.getPublicPort())));
         }
     }
