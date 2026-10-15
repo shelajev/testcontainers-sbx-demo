@@ -9,7 +9,7 @@
   <properties>
     <maven.compiler.release>27</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <sbx.version>66df7453d352cd4a4e23cc8fa3edb41b296a515c</sbx.version>
+    <sbx.version>b4324767a228e0c3dc985d6ea60b1c3f528335b4</sbx.version>
     <testcontainers.version>2.0.5</testcontainers.version>
   </properties>
   <repositories>
