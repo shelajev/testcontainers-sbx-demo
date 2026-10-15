@@ -45,7 +45,7 @@ public final class SbxDockerClientProviderStrategy extends DockerClientProviderS
         if (client == null) {
             getTransportConfig();
             client = PublishingDockerClient.wrap(super.getDockerClient(),
-                container -> runtime.publish(SandboxPorts.required(container)));
+                container -> SandboxPorts.remap(container, runtime.publish(SandboxPorts.required(container))));
         }
         return client;
     }

@@ -12,6 +12,19 @@ import java.util.Set;
 final class SandboxPorts {
     record Port(int number, String protocol) {}
 
+    static void remap(InspectContainerResponse container, Map<Port, Integer> mappings) {
+        if (required(container).isEmpty()) return;
+        container.getNetworkSettings().getPorts().getBindings().replaceAll((exposed, bindings) -> {
+            if (bindings == null) return null;
+            String protocol = exposed.getProtocol().name().toLowerCase(java.util.Locale.ROOT) + "4";
+            return java.util.Arrays.stream(bindings)
+                .filter(binding -> !"::".equals(binding.getHostIp()))
+                .map(binding -> Binding.bindIpAndPort("127.0.0.1",
+                    mappings.get(new Port(Integer.parseInt(binding.getHostPortSpec()), protocol))))
+                .toArray(Binding[]::new);
+        });
+    }
+
     static List<Port> required(InspectContainerResponse container) {
         if (container.getState() == null || !Boolean.TRUE.equals(container.getState().getRunning())
             || container.getNetworkSettings() == null || container.getNetworkSettings().getPorts() == null) {

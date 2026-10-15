@@ -6,6 +6,9 @@ import com.github.dockerjava.api.command.RestartContainerCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.command.UnpauseContainerCmd;
 import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.ContainerPort;
+import java.util.ArrayList;
+import java.util.Locale;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -30,7 +33,27 @@ final class PublishingDockerClient {
                         @SuppressWarnings("unchecked") List<Container> containers = (List<Container>) value;
                         for (Container container : containers) {
                             try {
-                                publish.accept(underlying.inspectContainerCmd(container.getId()).exec());
+                                InspectContainerResponse inspected = underlying.inspectContainerCmd(container.getId()).exec();
+                                publish.accept(inspected);
+                                if (inspected.getState() != null && Boolean.TRUE.equals(inspected.getState().getRunning())
+                                        && inspected.getNetworkSettings() != null
+                                        && inspected.getNetworkSettings().getPorts() != null) {
+                                    var ports = new ArrayList<ContainerPort>();
+                                    inspected.getNetworkSettings().getPorts().getBindings().forEach((exposed, bindings) -> {
+                                        if (bindings == null || bindings.length == 0) {
+                                            ports.add(new ContainerPort()
+                                                .withPrivatePort(exposed.getPort())
+                                                .withType(exposed.getProtocol().name().toLowerCase(Locale.ROOT)));
+                                        } else for (var binding : bindings) {
+                                            ports.add(new ContainerPort()
+                                                .withPrivatePort(exposed.getPort())
+                                                .withType(exposed.getProtocol().name().toLowerCase(Locale.ROOT))
+                                                .withIp(binding.getHostIp())
+                                                .withPublicPort(Integer.parseInt(binding.getHostPortSpec())));
+                                        }
+                                    });
+                                    container.ports = ports.toArray(ContainerPort[]::new);
+                                }
                             } catch (com.github.dockerjava.api.exception.NotFoundException ignored) {
                                 // It was removed after the list snapshot.
                             }

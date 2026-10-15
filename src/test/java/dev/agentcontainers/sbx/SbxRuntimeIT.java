@@ -1,7 +1,7 @@
 package dev.agentcontainers.sbx;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.dockerjava.api.model.ExposedPort;
@@ -120,21 +120,22 @@ class SbxRuntimeIT {
     }
 
     @Test
-    @DisplayName("An occupied host port fails with a publication error")
+    @DisplayName("An occupied host port is mapped to a free host port")
     @Timeout(value = 2, unit = TimeUnit.MINUTES)
-    void rejectsAnOccupiedHostPort() throws Exception {
+    void remapsAnOccupiedHostPort() throws Exception {
         // Given a host port already held by another service
         try (ServerSocket occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
             GenericContainer<?> nginx = nginx().withCreateContainerCmdModifier(cmd ->
                 cmd.getHostConfig().withPortBindings(new PortBinding(
                     Binding.bindPort(occupied.getLocalPort()), ExposedPort.tcp(HTTP_PORT))))) {
 
-            // When a container tries to publish that same port
-            Exception error = assertThrows(Exception.class, nginx::start);
-
-            // Then startup reports that the port cannot be published
-            String messages = failureMessages(error);
-            assertTrue(messages.contains("Cannot publish Docker ports"), messages);
+            nginx.start();
+            assertNotEquals(occupied.getLocalPort(), nginx.getMappedPort(HTTP_PORT));
+            assertTrue(fetch(endpoint(nginx)).contains("Welcome to nginx!"));
+            var listed = DockerClientFactory.instance().client().listContainersCmd()
+                .withIdFilter(java.util.List.of(nginx.getContainerId())).exec().getFirst();
+            assertTrue(java.util.Arrays.stream(listed.getPorts()).anyMatch(port ->
+                Integer.valueOf(nginx.getMappedPort(HTTP_PORT)).equals(port.getPublicPort())));
         }
     }
 
@@ -157,14 +158,6 @@ class SbxRuntimeIT {
 
     private static URI endpoint(String host, int port) {
         return URI.create("http://" + host + ":" + port);
-    }
-
-    private static String failureMessages(Throwable error) {
-        StringBuilder messages = new StringBuilder();
-        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-            messages.append(cause.getMessage()).append('\n');
-        }
-        return messages.toString();
     }
 
     private static String fetch(URI endpoint) throws Exception {

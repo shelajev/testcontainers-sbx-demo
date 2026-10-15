@@ -7,8 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 
-final class Commands {
-    private Commands() {}
+/** Runs host processes with bounded execution and concurrent output capture. */
+final class ProcessRunner {
+    private ProcessRunner() {}
 
     static Thread startWorker(String name, Runnable action) {
         return Thread.ofVirtual().name(name).start(action);
@@ -25,8 +26,8 @@ final class Commands {
                 process.getOutputStream().close();
                 ByteArrayOutputStream stdout = new ByteArrayOutputStream();
                 ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-                Thread out = startWorker("sbx-command-stdout", () -> drain(process.getInputStream(), stdout));
-                Thread err = startWorker("sbx-command-stderr", () -> drain(process.getErrorStream(), stderr));
+                Thread out = startWorker("process-stdout", () -> drain(process.getInputStream(), stdout));
+                Thread err = startWorker("process-stderr", () -> drain(process.getErrorStream(), stderr));
                 long deadline = System.nanoTime() + timeout.toNanos();
                 if (!process.waitFor(timeout)) {
                     throw new IOException("Command timed out after " + timeout + ": " + command);
