@@ -6,7 +6,7 @@ import org.testcontainers.dockerclient.TransportConfig;
 
 /**
  * Discovered through Testcontainers' ServiceLoader SPI. Creating the provider does not start sbx.
- * One mountless sandbox is created for the selected provider and removed when the JVM exits.
+ * A mountless sandbox is shared by test JVMs for the same project and retained for its image cache.
  */
 public final class SbxDockerClientProviderStrategy extends DockerClientProviderStrategy {
     private SandboxRuntime runtime;
@@ -37,17 +37,15 @@ public final class SbxDockerClientProviderStrategy extends DockerClientProviderS
     public synchronized TransportConfig getTransportConfig() {
         if (runtime == null) runtime = SandboxRuntime.open(SbxConfiguration.load());
         runtime.checkAlive();
-        return TransportConfig.builder().dockerHost(java.net.URI.create("unix://" + runtime.socket())).build();
+        return TransportConfig.builder().dockerHost(runtime.dockerHost()).build();
     }
 
     @Override
     public synchronized DockerClient getDockerClient() {
         if (client == null) {
             getTransportConfig();
-            client = PublishingDockerClient.wrap(super.getDockerClient(), container -> {
-                runtime.checkAlive();
-                runtime.publish(SandboxPorts.required(container));
-            });
+            client = PublishingDockerClient.wrap(super.getDockerClient(),
+                container -> runtime.publish(SandboxPorts.required(container)));
         }
         return client;
     }

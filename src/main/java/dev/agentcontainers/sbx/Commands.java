@@ -15,7 +15,12 @@ final class Commands {
     }
 
     static String run(Duration timeout, List<String> command) throws IOException {
-        try (Process process = new ProcessBuilder(command).start()) {
+        return run(timeout, new ProcessBuilder(command));
+    }
+
+    static String run(Duration timeout, ProcessBuilder builder) throws IOException {
+        List<String> command = builder.command();
+        try (Process process = builder.start()) {
             try {
                 process.getOutputStream().close();
                 ByteArrayOutputStream stdout = new ByteArrayOutputStream();
