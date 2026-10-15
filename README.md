@@ -18,7 +18,7 @@ cd examples/maven
 ./mvnw -B -ntp test
 ```
 
-Copy the entire `examples/maven` directory, including its `.mvn` directory and Maven wrapper, into another repository to try it independently. The example currently pins an earlier published commit with per-JVM sandbox cleanup; project sandbox reuse requires publishing this revision and updating that pin. It asserts that Testcontainers actually selected the sbx provider. It checks HTTP readiness, calls nginx from the host JVM using `getHost()` and `getMappedPort()`, and runs a command inside the container.
+Copy the entire `examples/maven` directory, including its `.mvn` directory and Maven wrapper, into another repository to try it independently. The example pins a published commit with the Docker TCP kit and project sandbox reuse. It asserts that Testcontainers actually selected the sbx provider. It checks HTTP readiness, calls nginx from the host JVM using `getHost()` and `getMappedPort()`, and runs a command inside the container.
 
 If several `sbx` installations exist, select the one matching the running daemon:
 
