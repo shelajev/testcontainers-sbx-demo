@@ -18,7 +18,7 @@ cd examples/maven
 ./mvnw -B -ntp test
 ```
 
-Copy the entire `examples/maven` directory, including its `.mvn` directory and Maven wrapper, into another repository to try it independently. The example pins a published commit with the Docker TCP kit and project sandbox reuse. It asserts that Testcontainers actually selected the sbx provider. It checks HTTP readiness, calls nginx from the host JVM using `getHost()` and `getMappedPort()`, and runs a command inside the container.
+Copy the entire `examples/maven` directory, including its `.mvn` directory and Maven wrapper, into another repository to try it independently. The example pins the runtime commit with the Docker TCP kit, automatic host-port allocation, and project sandbox reuse. It asserts that Testcontainers actually selected the sbx provider. It checks HTTP readiness, calls nginx from the host JVM using `getHost()` and `getMappedPort()`, and runs a command inside the container.
 
 If several `sbx` installations exist, select the one matching the running daemon:
 
@@ -41,7 +41,7 @@ Use the exact `sbx.version` from the [example POM](examples/maven/pom.xml). Thes
 <dependency>
   <groupId>com.github.shelajev</groupId>
   <artifactId>testcontainers-sbx-demo</artifactId>
-  <version>66df7453d352cd4a4e23cc8fa3edb41b296a515c</version>
+  <version>0bb0274a9cbe782ce8cc074146bcb849438bce56</version>
   <scope>test</scope>
 </dependency>
 ```
@@ -71,13 +71,13 @@ host test JVM → 127.0.0.1:PORT → sbx publication → Docker-assigned port �
 
 Each project uses a stable `tc-java-tcp-v1-<uuid>` sandbox name derived from its canonical directory path. The default directory is the test JVM's working directory; set `-Dsbx.projectDirectory=/absolute/project/root` to share it across Maven modules or IDE launch configurations. Separate checkouts use separate sandboxes. Parallel JVMs for the same project share its Docker daemon. New sandboxes have no host workspace mounts, shared skills disabled, 2 CPUs and 2 GiB of memory. The bundled kit configures Docker to listen on TCP port 2375 as well as its Unix socket. The kit’s port capability publishes that API to an automatically allocated loopback port; the provider discovers its IPv4 endpoint using `sbx ports --json`. No fixed host API port, SSH configuration, or socat bridge is needed. Source kits build in sbx’s builder sandbox by default, without a host Docker daemon; an explicit `SBX_KIT_BUILDER` environment setting takes precedence. The first build may need a longer `sbx.startupTimeoutSeconds` budget to download the builder and shell kits. The unauthenticated Docker API is accessible to local host processes.
 
-Docker start, restart, unpause, inspect, and list commands synchronously publish the required ports before returning. Guest Docker host ports are published on the **same numbered host IPv4 loopback ports**, including Ryuk's port. A collision fails the operation instead of returning an unreachable endpoint or selecting a different port behind Testcontainers' back. Containers sharing a Docker network communicate normally inside the sandbox.
+Docker start, restart, unpause, inspect, and list commands synchronously publish the required ports before returning. Guest Docker host ports, including Ryuk's port, are published on **automatically allocated host IPv4 loopback ports**. The wrapped client translates inspect and list responses so `getMappedPort()` returns the reachable host port. Host services and other sandboxes can use the same guest port numbers without colliding. Explicit Docker port bindings select the guest port; the host port is still allocated dynamically. Containers sharing a Docker network communicate normally inside the sandbox.
 
-The provider discovers existing publications when it needs a new port, then caches successful publications within each JVM. The last JVM using a project sandbox removes its application-port loopback publications on normal exit, including stale publications from earlier runs. A shared OS file lock prevents cleanup while another participating JVM is active and prevents new JVMs from connecting during cleanup. Lock files live under `~/.testcontainers/sbx/`. The provider manages these publications exclusively; adding or changing matching publications externally is unsupported.
+The provider discovers existing publications when it needs a new port, then caches successful mappings within each JVM. A separate OS file lock serializes discovery and allocation across JVMs. The last JVM using a project sandbox removes its application-port loopback publications on normal exit, including stale publications from earlier runs. A shared OS file lock prevents cleanup while another participating JVM is active and prevents new JVMs from connecting during cleanup. Lock files live under `~/.testcontainers/sbx/`. The provider manages these publications exclusively; adding or changing matching publications externally is unsupported.
 
-Standard Testcontainers Ryuk runs inside the sandbox, mounting the guest `/var/run/docker.sock`. It cleans up each test session's containers, networks and volumes. On JVM exit, the last JVM removes the application-port publications; the sandbox and pulled-image cache remain for the next run. This reuses the Docker runtime, without enabling Testcontainers' experimental container reuse.
+Standard Testcontainers Ryuk runs inside the sandbox, mounting the guest `/var/run/docker.sock`. It cleans up each test session's containers, networks and volumes. On normal JVM exit, the last JVM removes the application-port publications and stops the sandbox; its disk and pulled-image cache remain for the next run. This reuses the Docker runtime, without enabling Testcontainers' experimental container reuse.
 
-To discard a project's sandbox and image cache, stop its test JVMs and run `sbx rm --force NAME` using the name logged by the provider or shown by `sbx ls`. The next test run recreates it. A stopped sandbox is started with `sbx run --name NAME --detach`. The sandbox stays running in detached mode after JVM exit, and the Docker API publication remains for subsequent JVMs. Run `sbx stop NAME` when it should stop consuming resources. The name includes the runtime layout version so incompatible sandboxes created by the SSH-based provider are left intact; the TCP provider creates its own sandbox automatically. Older sandboxes can be removed separately when no longer needed.
+To discard a project's sandbox and image cache, stop its test JVMs and run `sbx rm --force NAME` using the name logged by the provider or shown by `sbx ls`. The next test run recreates it. A stopped sandbox is started with `sbx run --name NAME --detach`. The next test run automatically starts the stopped sandbox and rediscovers the Docker API endpoint. After a forced JVM termination or failed cleanup, run `sbx stop NAME` once no test JVMs are using it. The name includes the runtime layout version so incompatible sandboxes created by the SSH-based provider are left intact; the TCP provider creates its own sandbox automatically. Older sandboxes can be removed separately when no longer needed.
 
 Configuration is read from Java system properties only when the runtime is needed:
 
@@ -95,10 +95,10 @@ For example, `./mvnw -Dsbx.memory=4g -Dsbx.cpus=4 test` configures a new sandbox
 ## Current boundaries
 
 - This implementation targets local macOS/Linux sandboxes. Windows, cloud sandboxes, and a test JVM running inside another container are outside its supported scope.
-- Same-number publication can collide with host services or other sandboxes. TCP and UDP IPv4 bindings are supported by the publisher; IPv6-only and interface-specific Docker bindings are rejected. The live smoke test covers TCP.
+- TCP and UDP IPv4 bindings are supported by the publisher; IPv6-only and interface-specific Docker bindings are rejected. The live smoke test covers TCP.
 - Bind mounts resolve inside the mountless sandbox, so arbitrary host filesystem binds do not work. Use Testcontainers file-copy APIs or streamed image build contexts. Host Docker images are not automatically imported.
 - Containers launched through a guest Docker socket or external client are not automatically observed. An inspect/list through the wrapped client acts as a publication barrier. Compose, Kubernetes/Kind, reverse host-port exposure, and external-client orchestration need separate compatibility work.
-- Port publications remain until the last participating JVM exits, even if individual containers finish earlier. A forcibly killed JVM or failed CLI cleanup can leave publications behind; the next successful run cleans them up on exit. Older provider versions do not participate in locking and must not run concurrently against the same sandbox.
+- Port publications remain until the last participating JVM exits, even if individual containers finish earlier. A forcibly killed JVM or failed CLI cleanup can leave the sandbox running and publications behind; the next successful run cleans them up on exit. Older provider versions do not participate in locking and must not run concurrently against the same sandbox.
 - The host JVM remains on the host. Only Docker workloads run inside sbx. Existing sbx governance, authentication, image architecture, and guest-kernel constraints still apply.
 
 ## Build and verify the library
@@ -108,7 +108,7 @@ For example, `./mvnw -Dsbx.memory=4g -Dsbx.cpus=4 test` configures a new sandbox
 ./mvnw -B -ntp verify
 
 # Opt-in live test: creates or reuses the project sandbox; exercises HTTP, logs,
-# exec, file copy, and restart with Ryuk enabled.
+# exec, file copy, restart, and occupied host ports with Ryuk enabled.
 ./mvnw -B -ntp -Pintegration verify
 ```
 
