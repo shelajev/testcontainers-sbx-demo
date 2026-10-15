@@ -17,7 +17,7 @@ class ProjectLeaseTest {
         ProjectLease first = ProjectLease.open(file);
         Process second = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
             "-cp", System.getProperty("java.class.path"), Holder.class.getName(), file.toString())
-            .redirectErrorStream(true).start();
+            .redirectError(ProcessBuilder.Redirect.INHERIT).start();
         try {
             var output = second.inputReader();
             assertTimeoutPreemptively(Duration.ofSeconds(5), () -> assertEquals("ready", output.readLine()));
