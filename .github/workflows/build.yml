@@ -1,6 +1,8 @@
 name: Build strategy
 on:
   push:
+    branches-ignore:
+      - dependabot/**
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
